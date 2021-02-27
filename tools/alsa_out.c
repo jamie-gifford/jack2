@@ -73,7 +73,12 @@ volatile int output_new_delay = 0;
 volatile float output_offset = 0.0;
 volatile float output_integral = 0.0;
 volatile float output_diff = 0.0;
+volatile int output_current_delay;
 volatile int running_freewheel = 0;
+
+volatile int output_nframes = 0;
+volatile float output_acc = 0;
+volatile int output_slack = 0;
 
 snd_pcm_uframes_t real_buffer_size;
 snd_pcm_uframes_t real_period_size;
@@ -362,6 +367,13 @@ int process (jack_nframes_t nframes, void *arg) {
     // Do it the hard way.
     // this is for compensating xruns etc...
 
+    int slack = 0;
+    if (delay > target_delay - max_diff / 2 && delay < target_delay + max_diff / 2) {
+      slack = 1;
+    }
+
+    output_slack = slack;
+    
     if( delay > (target_delay+max_diff) ) {
 	snd_pcm_rewind( alsa_handle, delay - target_delay );
 	output_new_delay = (int) delay;
@@ -399,6 +411,8 @@ int process (jack_nframes_t nframes, void *arg) {
      * calculate the number of frames, we want to get.
      */
 
+    output_current_delay = delay;
+    
     double offset = delay - target_delay;
 
     // Save offset.
@@ -430,6 +444,27 @@ int process (jack_nframes_t nframes, void *arg) {
     // now quantize this value around resample_mean, so that the noise which is in the integral component doesn't hurt.
     current_resample_factor = floor( (current_resample_factor - resample_mean) * controlquant + 0.5 ) / controlquant + resample_mean;
 
+    JSList *node2 = playback_ports;
+
+    float acc = 0;
+    while ( node2 != NULL)
+    {
+	jack_port_t *port = (jack_port_t *) node2->data;
+	float *buf = jack_port_get_buffer (port, nframes);
+
+        int N = nframes * num_channels;
+        for (int i = 0; i < N; i++) {
+          acc += buf[i] * buf[i] / N;
+        }
+	node2 = jack_slist_next (node2);
+    }
+    output_acc = acc;
+    output_nframes = nframes;
+
+    if (acc > 0.00001 && slack) {
+      current_resample_factor = static_resample_factor; // XXXXXXXXXX
+    }
+    
     // Output "instrumentatio" gonna change that to real instrumentation in a few.
     output_resampling_factor = (float) current_resample_factor;
     output_diff = (float) smooth_offset;
@@ -453,6 +488,7 @@ int process (jack_nframes_t nframes, void *arg) {
     outbuf = alloca( rlen * formats[format].sample_size * num_channels );
 
     resampbuf = alloca( rlen * sizeof( float ) );
+    
     /*
      * render jack ports to the outbuf...
      */
@@ -822,7 +858,7 @@ int main (int argc, char *argv[]) {
 			    printf( "delay = %d\n", output_new_delay );
 			    output_new_delay = 0;
 		    }
-		    printf( "res: %f, \tdiff = %f, \toffset = %f \n", output_resampling_factor, output_diff, output_offset );
+		    printf( "res: %f, \tdiff = %f, \toffset = %f, delay=%d, target=%d, min=%d, max=%d, nframes=%d, num_channels=%d, acc=%f, slack=%d \n", output_resampling_factor, output_diff, output_offset, output_current_delay, target_delay, target_delay - max_diff, target_delay + max_diff, output_nframes, num_channels, output_acc, output_slack );
 	    }
     } else if( instrument ) {
 	    printf( "# n\tresamp\tdiff\toffseti\tintegral\n");
