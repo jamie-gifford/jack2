@@ -79,6 +79,8 @@ volatile int running_freewheel = 0;
 volatile int output_nframes = 0;
 volatile float output_acc = 0;
 volatile int output_slack = 0;
+volatile int output_frames_gen = 0;
+volatile int output_frames_used = 0;
 
 snd_pcm_uframes_t real_buffer_size;
 snd_pcm_uframes_t real_period_size;
@@ -461,8 +463,8 @@ int process (jack_nframes_t nframes, void *arg) {
     output_acc = acc;
     output_nframes = nframes;
 
-    if (acc > 0.00001 && slack) {
-      current_resample_factor = static_resample_factor; // XXXXXXXXXX
+    if (acc > 0.000001 && slack) {
+      current_resample_factor = static_resample_factor; 
     }
     
     // Output "instrumentatio" gonna change that to real instrumentation in a few.
@@ -521,6 +523,9 @@ int process (jack_nframes_t nframes, void *arg) {
 	src_node = jack_slist_next (src_node);
 	node = jack_slist_next (node);
 	chn++;
+
+        output_frames_gen = src.output_frames_gen;
+        output_frames_used = src.input_frames_used;
     }
 
     // now write the output...
@@ -858,7 +863,7 @@ int main (int argc, char *argv[]) {
 			    printf( "delay = %d\n", output_new_delay );
 			    output_new_delay = 0;
 		    }
-		    printf( "res: %f, \tdiff = %f, \toffset = %f, delay=%d, target=%d, min=%d, max=%d, nframes=%d, num_channels=%d, acc=%f, slack=%d \n", output_resampling_factor, output_diff, output_offset, output_current_delay, target_delay, target_delay - max_diff, target_delay + max_diff, output_nframes, num_channels, output_acc, output_slack );
+		    printf( "res: %f, \tdiff = %f, \toffset = %f, delay=%d, target=%d, min=%d, max=%d, nframes=%d, num_channels=%d, acc=%f, slack=%d, frames_used=%d, frames_gen=%d \n", output_resampling_factor, output_diff, output_offset, output_current_delay, target_delay, target_delay - max_diff, target_delay + max_diff, output_nframes, num_channels, output_acc, output_slack, output_frames_used, output_frames_gen );
 	    }
     } else if( instrument ) {
 	    printf( "# n\tresamp\tdiff\toffseti\tintegral\n");
